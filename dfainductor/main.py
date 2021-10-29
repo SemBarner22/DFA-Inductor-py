@@ -26,7 +26,8 @@ from .structures import APTA, InconsistencyGraph
               help='symmetry breaking strategies')
 # TODO: implement timeout
 # @click.option('-t', '--timeout', metavar='<SECONDS>', type=int, help='set timeout')
-@click.option('-s', '--solver', metavar='<SOLVER>', required=True, help='solver name')
+@click.option('-s', '--solver', metavar='<SOLVER>', help='solver name')
+@click.option('-ps', '--parallel-solvel', metavar='<PATH>', help='path to execute file')
 @click.option('-cegar', '--cegar-mode', type=click.Choice(['none', 'lin-abs', 'lin-rel', 'geom']), default='none',
               show_default=True,
               help='counterexamples providing mode for CEGAR')
@@ -47,6 +48,7 @@ def cli(input_: str,
         output: Optional[str],
         sym_breaking: str,
         solver: str,
+        parallel_solver_path: str,
         cegar_mode: str,
         initial_amount: Optional[int],
         step_amount: Optional[int],
@@ -74,6 +76,7 @@ def cli(input_: str,
     searcher = LSUS(apta,
                     ig,
                     solver,
+                    parallel_solver_path,
                     sym_breaking,
                     cegar_mode,
                     examples_provider,

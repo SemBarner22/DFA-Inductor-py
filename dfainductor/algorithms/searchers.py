@@ -2,6 +2,7 @@ from typing import List
 
 from pysat.solvers import Solver
 
+from ..solver_wrapper import SolverWrapper
 from ..variables import VarPool
 from .reductions import ClauseGenerator
 from ..examples import BaseExamplesProvider
@@ -11,12 +12,13 @@ from ..structures import APTA, DFA, InconsistencyGraph
 
 
 class LSUS:
-    _solver: Solver
+    _solver: SolverWrapper
 
     def __init__(self,
                  apta: APTA,
                  ig: InconsistencyGraph,
                  solver_name: str,
+                 parallel_solver_path: str,
                  sb_strategy: str,
                  cegar_mode: str,
                  examples_provider: BaseExamplesProvider,
@@ -24,6 +26,7 @@ class LSUS:
         self._apta = apta
         self._ig = ig
         self._solver_name = solver_name
+        self._parallel_solver_path = parallel_solver_path
         self._sb_strategy = sb_strategy
         self._cegar_mode = cegar_mode
         self._examples_provider = examples_provider
@@ -61,11 +64,11 @@ class LSUS:
             return None
 
     def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
-        self._solver = Solver(self._solver_name)
+        self._solver = SolverWrapper(self._solver_name)
         log_info('Solver has been started.')
         for size in range(lower_bound, upper_bound + 1):
             if self._assumptions_mode == 'none' and size > lower_bound:
-                self._solver = Solver(self._solver_name)
+                self._solver = SolverWrapper(self._solver_name)
                 log_info('Solver has been restarted.')
             log_br()
             log_info('Trying to build a DFA with {0} states.'.format(size))

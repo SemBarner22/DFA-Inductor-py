@@ -4,6 +4,7 @@ from typing import List, Tuple, Iterator
 
 from pysat.solvers import Solver
 
+from ..solver_wrapper import SolverWrapper
 from ..structures import APTA, InconsistencyGraph
 from ..variables import VarPool
 
@@ -70,19 +71,19 @@ class BaseClausesGenerator(ABC):
         self._alphabet_size = len(self._alphabet)
 
     @abstractmethod
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         pass
 
     @abstractmethod
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         pass
 
     @abstractmethod
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         pass
 
-    def build_assumptions(self, cur_size: int, solver: Solver) -> List[int]:
+    def build_assumptions(self, cur_size: int, solver: SolverWrapper) -> List[int]:
         assumptions = []
         if self._assumptions_mode == 'chain':
             for v in range(self._apta.size):
@@ -111,22 +112,22 @@ class ClauseGenerator(BaseClausesGenerator):
         else:
             self._sb_generator = NoSymBreakingClausesGenerator(apta, ig, var_pool, assumptions_mode)
 
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         self._mindfa_generator.generate(solver, size)
         self._sb_generator.generate(solver, size)
 
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         self._mindfa_generator.generate_with_new_counterexamples(solver, size, new_from, changed_statuses)
         self._sb_generator.generate_with_new_counterexamples(solver, size, new_from, changed_statuses)
 
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         self._mindfa_generator.generate_with_new_size(solver, old_size, new_size)
         self._sb_generator.generate_with_new_size(solver, old_size, new_size)
 
 
 class MinDFAToSATClausesGenerator(BaseClausesGenerator):
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         self._fix_start_state(solver)
         self._one_node_maps_to_alo_state(solver, size)
         self._one_node_maps_to_at_most_one_state(solver, size)
@@ -137,7 +138,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
         self._mapped_node_and_transition_force_mapping(solver, size)
         self._inconsistency_graph_constraints(solver, size)
 
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         self._one_node_maps_to_alo_state(solver, size, new_node_from=new_from)
         self._one_node_maps_to_at_most_one_state(solver, size, new_node_from=new_from)
@@ -149,7 +150,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
         self._mapped_node_and_transition_force_mapping(solver, size, new_node_from=new_from)
         self._inconsistency_graph_constraints(solver, size, new_node_from=new_from)
 
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         self._one_node_maps_to_alo_state(solver, new_size, old_size=old_size)
         self._one_node_maps_to_at_most_one_state(solver, new_size, old_size=old_size)
         self._dfa_is_complete(solver, new_size, old_size=old_size)
@@ -158,11 +159,11 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
         self._mapped_adjacent_nodes_force_transition(solver, new_size, old_size=old_size)
         self._mapped_node_and_transition_force_mapping(solver, new_size, old_size=old_size)
 
-    def _fix_start_state(self, solver: Solver) -> None:
+    def _fix_start_state(self, solver: SolverWrapper) -> None:
         solver.add_clause((self._vars.var('x', 0, 0),))
 
     def _one_node_maps_to_alo_state(self,
-                                    solver: Solver,
+                                    solver: SolverWrapper,
                                     size: int,
                                     new_node_from: int = 0,
                                     old_size: int = 0) -> None:
@@ -173,12 +174,12 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
         elif self._assumptions_mode == 'switch':
             self._one_node_maps_to_alo_state_switch(solver, size, new_node_from, old_size)
 
-    def _one_node_maps_to_alo_state_classic(self, solver: Solver, size: int, new_node_from: int = 0) -> None:
+    def _one_node_maps_to_alo_state_classic(self, solver: SolverWrapper, size: int, new_node_from: int = 0) -> None:
         for i in range(new_node_from, self._apta.size):
             solver.add_clause(tuple(self._vars.var('x', i, j) for j in range(size)))
 
     def _one_node_maps_to_alo_state_chain(self,
-                                          solver: Solver,
+                                          solver: SolverWrapper,
                                           size: int,
                                           new_node_from: int = 0,
                                           old_size: int = 0) -> None:
@@ -196,7 +197,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                 )
 
     def _one_node_maps_to_alo_state_switch(self,
-                                           solver: Solver,
+                                           solver: SolverWrapper,
                                            size: int,
                                            new_node_from: int = 0,
                                            old_size: int = 0) -> None:
@@ -208,7 +209,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
             for v in range(self._apta.size):
                 solver.add_clause((self._vars.var('sw_x', old_size, v),))
 
-    def _one_node_maps_to_at_most_one_state(self, solver: Solver, size: int, new_node_from: int = 0,
+    def _one_node_maps_to_at_most_one_state(self, solver: SolverWrapper, size: int, new_node_from: int = 0,
                                             old_size: int = 0) -> None:
         for v in range(new_node_from, self._apta.size):
             for i in range(old_size, size):
@@ -217,7 +218,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                         (-self._vars.var('x', v, i), -self._vars.var('x', v, j))
                     )
 
-    def _dfa_is_complete(self, solver: Solver, size: int, old_size: int = 0):
+    def _dfa_is_complete(self, solver: SolverWrapper, size: int, old_size: int = 0):
         if self._assumptions_mode == 'none':
             self._dfa_is_complete_classic(solver, size)
         elif self._assumptions_mode == 'chain':
@@ -225,14 +226,14 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
         elif self._assumptions_mode == 'switch':
             self._dfa_is_complete_switch(solver, size, old_size)
 
-    def _dfa_is_complete_classic(self, solver: Solver, size: int) -> None:
+    def _dfa_is_complete_classic(self, solver: SolverWrapper, size: int) -> None:
         for i in range(size):
             for l_id in range(self._alphabet_size):
                 solver.add_clause(
                     tuple(self._vars.var('y', i, l_id, j) for j in range(size))
                 )
 
-    def _dfa_is_complete_chain(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _dfa_is_complete_chain(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         if old_size == 0:
             for l_id in range(self._alphabet_size):
                 for i in range(old_size):
@@ -254,7 +255,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                     (-self._vars.var('alo_y', size, i, l_id),)
                 )
 
-    def _dfa_is_complete_switch(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _dfa_is_complete_switch(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for i in range(size):
             for l_id in range(self._alphabet_size):
                 solver.add_clause(
@@ -268,7 +269,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                 for l_id in range(self._alphabet_size):
                     solver.add_clause((self._vars.var('sw_y', old_size, from_, l_id),))
 
-    def _dfa_is_deterministic(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _dfa_is_deterministic(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for l_id in range(self._alphabet_size):
             for i in range(old_size):
                 for j in range(old_size, size):
@@ -284,7 +285,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                         )
 
     def _state_status_compatible_with_node_status(self,
-                                                  solver: Solver,
+                                                  solver: SolverWrapper,
                                                   size: int,
                                                   new_node_from: int = 0,
                                                   old_size: int = 0,
@@ -301,7 +302,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                     solver.append_formula(
                         _implication_to_clauses(self._vars.var('x', i, j), -self._vars.var('z', j)))
 
-    def _mapped_adjacent_nodes_force_transition(self, solver: Solver, size: int, new_node_from: int = 0,
+    def _mapped_adjacent_nodes_force_transition(self, solver: SolverWrapper, size: int, new_node_from: int = 0,
                                                 old_size: int = 0) -> None:
         for parent in self._apta.nodes:
             for label, child in parent.children.items():
@@ -342,7 +343,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                                     )
                                 )
 
-    def _mapped_node_and_transition_force_mapping(self, solver: Solver, size: int, new_node_from: int = 0,
+    def _mapped_node_and_transition_force_mapping(self, solver: SolverWrapper, size: int, new_node_from: int = 0,
                                                   old_size: int = 0) -> None:
         for parent in self._apta.nodes:
             for label, child in parent.children.items():
@@ -382,7 +383,7 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
                                     )
                                 )
 
-    def _inconsistency_graph_constraints(self, solver: Solver, size: int, new_node_from: int = 0,
+    def _inconsistency_graph_constraints(self, solver: SolverWrapper, size: int, new_node_from: int = 0,
                                          old_size: int = 0) -> None:
         for node1 in range(self._ig.size):
             for node2 in self._ig.edges[node1]:
@@ -392,25 +393,25 @@ class MinDFAToSATClausesGenerator(BaseClausesGenerator):
 
 
 class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         self._define_t_variables(solver, size)
         self._define_p_variables(solver, size)
         self._state_has_at_least_one_parent(solver, size)
         self._preserve_parent_order_on_children(solver, size)
         self._order_children(solver, size)
 
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         pass
 
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         self._define_t_variables(solver, new_size, old_size)
         self._define_p_variables(solver, new_size, old_size)
         self._state_has_at_least_one_parent(solver, new_size, old_size)
         self._preserve_parent_order_on_children(solver, new_size, old_size)
         self._order_children(solver, new_size, old_size)
 
-    def _define_t_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_t_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for to in range(old_size, size):
             for from_ in range(to):
                 solver.append_formula(
@@ -420,7 +421,7 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
                     )
                 )
 
-    def _define_p_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_p_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 solver.append_formula(
@@ -431,11 +432,11 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
                     )
                 )
 
-    def _state_has_at_least_one_parent(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _state_has_at_least_one_parent(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(1, old_size), size):
             solver.add_clause(tuple(self._vars.var('p', child, parent) for parent in range(child)))
 
-    def _preserve_parent_order_on_children(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _preserve_parent_order_on_children(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(2, old_size - 1), size - 1):
             for parent in range(1, child):
                 for pre_parent in range(parent):
@@ -445,14 +446,14 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
                         )
                     )
 
-    def _order_children(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_children(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         if self._alphabet_size == 2:
             self._order_children_with_binary_alphabet(solver, size, old_size)
         elif self._alphabet_size > 2:
             self._define_m_variables(solver, size, old_size)
             self._order_children_using_m(solver, size, old_size)
 
-    def _order_children_with_binary_alphabet(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_children_with_binary_alphabet(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(0, old_size - 1), size - 1):
             for parent in range(child):
                 solver.append_formula(
@@ -474,7 +475,7 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
                     )
                 )
 
-    def _define_m_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_m_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 for l_num in range(self._alphabet_size):
@@ -486,7 +487,7 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
                         )
                     )
 
-    def _order_children_using_m(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_children_using_m(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(old_size - 1, 0), size - 1):
             for parent in range(child):
                 for l_num in range(self._alphabet_size):
@@ -505,7 +506,7 @@ class BFSBasedSymBreakingClausesGenerator(BaseClausesGenerator):
 
 class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerator):
 
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         self._define_t_variables(solver, size)
         self._define_nt_variables(solver, size)
         self._define_p_variables_using_nt(solver, size)
@@ -514,11 +515,11 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
         self._order_parents_using_np_variables(solver, size)
         self._order_children(solver, size)
 
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         pass
 
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         self._define_t_variables(solver, new_size, old_size)
         self._define_nt_variables(solver, new_size, old_size)
         self._define_p_variables_using_nt(solver, new_size, old_size)
@@ -527,7 +528,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
         self._order_parents_using_np_variables(solver, new_size, old_size)
         self._order_children(solver, new_size, old_size)
 
-    def _define_nt_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_nt_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(old_size, 2), size):
             solver.append_formula(
                 _iff_to_clauses(self._vars.var('nt', 0, child), -self._vars.var('t', 0, child))
@@ -540,7 +541,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                     )
                 )
 
-    def _define_p_variables_using_nt(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_p_variables_using_nt(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(1, old_size), size):
             solver.append_formula(
                 _iff_to_clauses(self._vars.var('p', child, 0), self._vars.var('t', 0, child))
@@ -553,14 +554,14 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                     )
                 )
 
-    def _state_has_at_most_one_parent(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _state_has_at_most_one_parent(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 for other_parent in range(parent):
                     solver.add_clause(
                         (-self._vars.var('p', child, parent), -self._vars.var('p', child, other_parent)))
 
-    def _define_np_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_np_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(old_size, 2), size):
             solver.append_formula(
                 _iff_to_clauses(self._vars.var('np', child, 0), -self._vars.var('p', child, 0))
@@ -573,7 +574,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                     )
                 )
 
-    def _order_parents_using_np_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_parents_using_np_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(1, old_size - 1), size - 1):
             for parent in range(child):
                 solver.append_formula(
@@ -583,7 +584,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                     )
                 )
 
-    def _order_children(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_children(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         if self._alphabet_size == 2:
             self._order_children_with_binary_alphabet(solver, size, old_size)
         elif self._alphabet_size > 2:
@@ -592,7 +593,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
             self._define_zm_variables(solver, size, old_size)
             self._order_children_using_zm(solver, size, old_size)
 
-    def _define_ny_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_ny_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 solver.append_formula(
@@ -612,7 +613,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                         )
                     )
 
-    def _define_m_variables_with_ny(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_m_variables_with_ny(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 solver.append_formula(
@@ -632,7 +633,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                         )
                     )
 
-    def _define_zm_variables(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _define_zm_variables(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(old_size, size):
             for parent in range(child):
                 solver.append_formula(
@@ -652,7 +653,7 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
                         )
                     )
 
-    def _order_children_using_zm(self, solver: Solver, size: int, old_size: int = 0) -> None:
+    def _order_children_using_zm(self, solver: SolverWrapper, size: int, old_size: int = 0) -> None:
         for child in range(max(0, old_size - 1), size - 1):
             for parent in range(child):
                 for l_num in range(1, self._alphabet_size):
@@ -669,12 +670,12 @@ class TightBFSBasedSymBreakingClausesGenerator(BFSBasedSymBreakingClausesGenerat
 
 
 class NoSymBreakingClausesGenerator(BaseClausesGenerator):
-    def generate(self, solver: Solver, size: int) -> None:
+    def generate(self, solver: SolverWrapper, size: int) -> None:
         pass
 
-    def generate_with_new_counterexamples(self, solver: Solver, size: int, new_from: int,
+    def generate_with_new_counterexamples(self, solver: SolverWrapper, size: int, new_from: int,
                                           changed_statuses: List[int]) -> None:
         pass
 
-    def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
+    def generate_with_new_size(self, solver: SolverWrapper, old_size: int, new_size: int) -> None:
         pass
