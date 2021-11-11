@@ -27,7 +27,7 @@ from .structures import APTA, InconsistencyGraph
 # TODO: implement timeout
 # @click.option('-t', '--timeout', metavar='<SECONDS>', type=int, help='set timeout')
 @click.option('-s', '--solver', metavar='<SOLVER>', help='solver name')
-@click.option('-ps', '--parallel-solvel', metavar='<PATH>', help='path to execute file')
+@click.option('-ps', '--parallel-solver', 'parallel_solver_path', metavar='<PATH>', help='path to execute file')
 @click.option('-cegar', '--cegar-mode', type=click.Choice(['none', 'lin-abs', 'lin-rel', 'geom']), default='none',
               show_default=True,
               help='counterexamples providing mode for CEGAR')

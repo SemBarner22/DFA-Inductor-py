@@ -1,0 +1,3 @@
+#!/bin/bash
+
+./parallel-solver/painless-ExMapleLCMDistChronoBT -c=60 -max-memory=256 -lbd-limit=1 -n-sharers=4 -strategy=0 -conf-id=1 -disable-export-only inputFalse.cnf

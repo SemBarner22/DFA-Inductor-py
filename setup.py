@@ -33,6 +33,8 @@ setup(
     url="https://github.com/ctlab/DFA-Inductor-py",
     license=about['__license__'],
     packages=find_packages(),
+    package_data={'': ['dfainductor/parallel/*']},
+    include_package_data=True,
     install_requires=requires,
     extras_require=extras,
     python_requires=">=3.7",

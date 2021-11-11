@@ -2,7 +2,7 @@ from typing import List
 
 from pysat.solvers import Solver
 
-from ..solver_wrapper import SolverWrapper
+from ..solver_wrapper import SolverWrapper, ParallelSolverPathToFile
 from ..variables import VarPool
 from .reductions import ClauseGenerator
 from ..examples import BaseExamplesProvider
@@ -49,6 +49,7 @@ class LSUS:
 
         if is_sat:
             assignment = self._solver.get_model()
+            log_info("assignment" + str(assignment))
             dfa = DFA()
             for i in range(size):
                 dfa.add_state(
@@ -64,11 +65,11 @@ class LSUS:
             return None
 
     def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
-        self._solver = SolverWrapper(self._solver_name)
+        self._solver = ParallelSolverPathToFile(self._solver_name)
         log_info('Solver has been started.')
         for size in range(lower_bound, upper_bound + 1):
             if self._assumptions_mode == 'none' and size > lower_bound:
-                self._solver = SolverWrapper(self._solver_name)
+                self._solver = ParallelSolverPathToFile(self._solver_name)
                 log_info('Solver has been restarted.')
             log_br()
             log_info('Trying to build a DFA with {0} states.'.format(size))
