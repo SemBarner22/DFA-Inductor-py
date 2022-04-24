@@ -34,8 +34,11 @@ from .structures import APTA, InconsistencyGraph
               help='initial amount of examples for CEGAR')
 @click.option('-step', '--step-amount', metavar='<INT>', type=int, default=10, show_default=True,
               help='amount of examples added on each step for CEGAR')
+@click.option('-pc', '--parallel-cegar', 'parallel_cegar', is_flag=True, default=False, show_default=True,
+              help='use several processes for CEGAR')
 @click.option('-a', '--assumptions', 'assumptions_mode', type=click.Choice(['none', 'switch', 'chain']),
               default='none', show_default=True, help='assumptions mode')
+@click.option('-f', '--file', 'filename')
 @click.option('-stat', '--statistics', 'print_statistics', is_flag=True, default=False, show_default=True,
               help='prints time statistics summary in the end')
 @click.option('-ig', '--inconsistency-graph', 'use_ig', is_flag=True, default=False, show_default=True,
@@ -48,6 +51,8 @@ def cli(input_: str,
         sym_breaking: str,
         solver: str,
         cegar_mode: str,
+        parallel_cegar: bool,
+        filename: str,
         initial_amount: Optional[int],
         step_amount: Optional[int],
         assumptions_mode: str,
@@ -78,7 +83,7 @@ def cli(input_: str,
                     cegar_mode,
                     examples_provider,
                     assumptions_mode)
-    dfa = searcher.search(lower_bound, upper_bound)
+    dfa = searcher.search(lower_bound, upper_bound, parallel_cegar)
     if not dfa:
         log_info('There is no such DFA.')
     else:
@@ -101,4 +106,4 @@ def cli(input_: str,
             log_error('DFA is not consistent with the given examples.')
     STATISTICS.stop_whole_timer()
     if print_statistics:
-        STATISTICS.print_statistics()
+        STATISTICS.print_statistics(filename)

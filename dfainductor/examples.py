@@ -45,6 +45,10 @@ class BaseExamplesProvider(ABC):
     def _counter_examples_size(self) -> int:
         pass
 
+    @property
+    def examples(self):
+        return self._examples
+
 
 class LinearAbsoluteExamplesProvider(BaseExamplesProvider):
     def __init__(self, input_: str, initial_examples_amount: int, counter_examples_amount: int) -> None:

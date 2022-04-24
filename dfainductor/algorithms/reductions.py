@@ -82,7 +82,7 @@ class BaseClausesGenerator(ABC):
     def generate_with_new_size(self, solver: Solver, old_size: int, new_size: int) -> None:
         pass
 
-    def build_assumptions(self, cur_size: int, solver: Solver) -> List[int]:
+    def build_assumptions(self, cur_size: int) -> List[int]:
         assumptions = []
         if self._assumptions_mode == 'chain':
             for v in range(self._apta.size):

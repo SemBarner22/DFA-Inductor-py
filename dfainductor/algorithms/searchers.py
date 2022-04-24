@@ -1,3 +1,4 @@
+import queue
 from typing import List
 
 from pysat.solvers import Solver
@@ -8,6 +9,34 @@ from ..examples import BaseExamplesProvider
 from ..logging_utils import *
 from ..statistics import STATISTICS
 from ..structures import APTA, DFA, InconsistencyGraph
+import pebble as pb
+import time
+import random
+
+amount = 4
+p = None
+q_for_lock = queue.Queue()
+futures = set()
+dka = None
+
+
+def task_done(future):
+    dfa = future.result()
+    print(str(dfa))
+    futures.remove(future)
+    if dfa is not None:
+        for a in futures:
+            a.cancel()
+        print(str("task_done(task, future)"))
+        global dka
+        dka = dfa
+        for a in futures:
+            a.cancel()
+        q_for_lock.put("d")
+    elif len(futures) == 0:
+        dka = None
+        q_for_lock.put("empty")
+
 
 
 class LSUS:
@@ -41,11 +70,12 @@ class LSUS:
         log_info('Clauses in CNF: {0}'.format(self._solver.nof_clauses()))
 
         STATISTICS.start_solving_timer()
-        is_sat = self._solver.solve(assumptions=assumptions)
+        is_sat = self._solver.solve()
         STATISTICS.stop_solving_timer()
 
         if is_sat:
             assignment = self._solver.get_model()
+            log_info("assignment" + str(assignment))
             dfa = DFA()
             for i in range(size):
                 dfa.add_state(
@@ -60,49 +90,112 @@ class LSUS:
         else:
             return None
 
-    def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
-        self._solver = Solver(self._solver_name)
+    def search(self, lower_bound: int, upper_bound: int, use_parallel_cegar: bool) -> Optional[DFA]:
+        # self._solver = Solver(self._solver_name)
         log_info('Solver has been started.')
         for size in range(lower_bound, upper_bound + 1):
             if self._assumptions_mode == 'none' and size > lower_bound:
-                self._solver = Solver(self._solver_name)
+                # self._solver = Solver(self._solver_name)
                 log_info('Solver has been restarted.')
             log_br()
             log_info('Trying to build a DFA with {0} states.'.format(size))
 
-            STATISTICS.start_formula_timer()
-            if self._assumptions_mode != 'none' and size > lower_bound:
-                self._clause_generator.generate_with_new_size(self._solver, size - 1, size)
+            # STATISTICS.start_formula_timer()
+            # STATISTICS.stop_formula_timer()
+            assumptions = self._clause_generator.build_assumptions(size)
+
+            if use_parallel_cegar:
+                global p
+                p = pb.ProcessPool(amount)
+                global futures
+                for i in range(amount):
+                    future = p.schedule(
+                        cegar,
+                        args=(
+                            self,
+                            self._apta,
+                            self._ig,
+                            self._cegar_mode,
+                            self._solver_name,
+                            self._examples_provider,
+                            self._var_pool,
+                            self._clause_generator,
+                            lower_bound,
+                            size,
+                            assumptions,
+                            True
+                        )
+                    )
+                    future.add_done_callback(task_done)
+                    futures.add(future)
+                print("waiting")
+                q_for_lock.get(block=True)
+                p.close()
+                p.stop()
+                p.join()
+                global dka
+                if dka is not None:
+                    return dka
             else:
-                self._clause_generator.generate(self._solver, size)
-            STATISTICS.stop_formula_timer()
-            assumptions = self._clause_generator.build_assumptions(size, self._solver)
-            while True:
-                dfa = self._try_to_synthesize_dfa(size, assumptions)
-                if dfa:
-                    counter_examples = self._examples_provider.get_counter_examples(dfa)
-                    if counter_examples:
-                        log_info('An inconsistent DFA with {0} states is found.'.format(size))
-                        log_info('Added {0} counterexamples.'.format(len(counter_examples)))
-
-                        STATISTICS.start_apta_building_timer()
-                        (new_nodes_from, changed_statuses) = self._apta.add_examples(counter_examples)
-                        STATISTICS.stop_apta_building_timer()
-
-                        STATISTICS.start_ig_building_timer()
-                        self._ig.update(new_nodes_from)
-                        STATISTICS.stop_ig_building_timer()
-
-                        STATISTICS.start_formula_timer()
-                        self._clause_generator.generate_with_new_counterexamples(self._solver, size,
-                                                                                 new_nodes_from,
-                                                                                 changed_statuses)
-                        STATISTICS.stop_formula_timer()
-                        continue
-                break
-            if not dfa:
-                log_info('Not found a DFA with {0} states.'.format(size))
-            else:
-                log_success('The DFA with {0} states is found!'.format(size))
-                return dfa
+                dfa = cegar(self, self._apta,
+                            self._ig,
+                            self._cegar_mode,
+                            self._solver_name,
+                            self._examples_provider,
+                            self._var_pool,
+                            self._clause_generator, lower_bound,
+                size, assumptions)
+                if dfa is not None:
+                    return dfa
         return None
+
+def cegar(
+        self,
+        apta,
+        ig,
+        cegar_mode,
+        solver_name,
+        provider,
+        var_pool,
+        clause_generator,
+        lower_bound,
+        size, assumptions, shuffle=False) -> Optional[DFA]:
+
+    self._solver = Solver(solver_name)
+    if self._assumptions_mode != 'none' and size > lower_bound:
+        log_info('_assumptions_mode isnt none')
+        self._clause_generator.generate_with_new_size(self._solver, size - 1, size)
+    else:
+        log_info('_assumptions_mode is none')
+        self._clause_generator.generate(self._solver, size)
+    while True:
+        print("doing")
+        if shuffle:
+            random.shuffle(provider.examples)
+        dfa = self._try_to_synthesize_dfa(size, assumptions)
+        if dfa:
+            counter_examples = provider.get_counter_examples(dfa)
+            if counter_examples:
+                log_info('An inconsistent DFA with {0} states is found.'.format(size))
+                log_info('Added {0} counterexamples.'.format(len(counter_examples)))
+
+                STATISTICS.start_apta_building_timer()
+                (new_nodes_from, changed_statuses) = apta.add_examples(counter_examples)
+                STATISTICS.stop_apta_building_timer()
+
+                STATISTICS.start_ig_building_timer()
+                ig.update(new_nodes_from)
+                STATISTICS.stop_ig_building_timer()
+
+                STATISTICS.start_formula_timer()
+                clause_generator.generate_with_new_counterexamples(self._solver, size,
+                                                                         new_nodes_from,
+                                                                         changed_statuses)
+                STATISTICS.stop_formula_timer()
+                continue
+        break
+    if not dfa:
+        log_info('Not found a DFA with {0} states.'.format(size))
+    else:
+        log_success('The DFA with {0} states is found!'.format(size))
+        return dfa
