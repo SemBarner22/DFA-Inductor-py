@@ -1,6 +1,7 @@
+import queue
 from typing import List
 
-from pysat.solvers import Solver
+from pysat.solvers import Solver, Glucose3
 
 from ..variables import VarPool
 from .reductions import ClauseGenerator
@@ -8,6 +9,43 @@ from ..examples import BaseExamplesProvider
 from ..logging_utils import *
 from ..statistics import STATISTICS
 from ..structures import APTA, DFA, InconsistencyGraph
+import pebble as pb
+import time
+import multiprocess as mp
+import random
+
+
+amount = 8
+window = 2
+# amount = mp.cpu_count()
+p = None
+var: int = 1
+index_futures = dict()
+
+lower = 0
+q_final = queue.Queue()
+q_for_lock = queue.Queue()
+res = False
+dka = None
+state_amount = 1000
+answer_found = False
+unsat = set()
+
+
+def quit(i):
+    print("quit")
+    if i is None:
+        global p, var
+        print(str(var))
+        var += 1
+        if var < 100:
+            pass
+        else:
+            q_for_lock.put("d")
+            p.terminate()
+        print("end")
+        return None
+    return None
 
 
 class LSUS:
@@ -41,11 +79,13 @@ class LSUS:
         log_info('Clauses in CNF: {0}'.format(self._solver.nof_clauses()))
 
         STATISTICS.start_solving_timer()
-        is_sat = self._solver.solve(assumptions=assumptions)
+        is_sat = self._solver.solve()
+        print(is_sat)
         STATISTICS.stop_solving_timer()
 
         if is_sat:
             assignment = self._solver.get_model()
+            log_info("assignment" + str(assignment))
             dfa = DFA()
             for i in range(size):
                 dfa.add_state(
@@ -61,40 +101,135 @@ class LSUS:
             return None
 
     def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
-        self._solver = Solver(self._solver_name)
+        global var, p, helper, index_futures, dka, lower, answer_found
+        lower = lower_bound
+        p = pb.ProcessPool(amount)
+        for i in range(window):
+            future = p.schedule(
+                helper.find_dka,
+                args=(
+                    var,
+                    lower_bound,
+                    self._solver_name,
+                    self._assumptions_mode,
+                    self._clause_generator,
+                    self
+                )
+            )
+            future.add_done_callback(task_done)
+            index_futures.setdefault(var, []).append(future)
+            var += 1
+        first = True
+        global state_amount
+        while not answer_found:
+            ans = q_for_lock.get(block=True)
+            if ans == "yes" and not answer_found and first and state_amount != 1000:
+                first = False
+                print("found large")
+                v = state_amount - window
+                names = ["Glucose4", "Minicard", "Lingeling", "Minisat22"]
+                for i in range(amount // 2):
+                    future = p.schedule(
+                        helper.find_dka,
+                        args=(
+                            v,
+                            lower,
+                            names[i],
+                            self._assumptions_mode,
+                            self._clause_generator,
+                            self
+                        )
+                    )
+                    future.add_done_callback(task_done)
+                    index_futures.setdefault(v, []).append(future)
+                v = v + 1
+                for i in range(amount // 2):
+                    future = p.schedule(
+                        helper.find_dka,
+                        args=(
+                            v,
+                            lower,
+                            names[i],
+                            self._assumptions_mode,
+                            self._clause_generator,
+                            self
+                        )
+                    )
+                    future.add_done_callback(task_done)
+                    index_futures.setdefault(v, []).append(future)
+            else:
+                print("not found")
+                if var < state_amount:
+                    future = p.schedule(
+                        helper.find_dka,
+                        args=(
+                            var,
+                            lower,
+                            self._solver_name,
+                            self._assumptions_mode,
+                            self._clause_generator,
+                            self
+                        )
+                    )
+                    future.add_done_callback(task_done)
+                    index_futures.setdefault(var, []).append(future)
+                    var = var + 1
+        p.close()
+        p.stop()
+        p.join()
+        return dka
+
+class Helper:
+
+    def find_dka(self, variable: int, lower_bound: int, _solver_name,
+                 _assumptions_mode,
+                 _clause_generator,
+                 value,
+                 random_seed=None
+                 ) -> Optional[DFA]:
+        print("find dkaaaa" + str(variable))
+        # if variable > 100:
+        #     return None
+        value._solver = Solver(_solver_name)
+        # random.randint(1, 250)
+        # value._solver = Glucose3(random_seed=236)
         log_info('Solver has been started.')
-        for size in range(lower_bound, upper_bound + 1):
-            if self._assumptions_mode == 'none' and size > lower_bound:
-                self._solver = Solver(self._solver_name)
+        for size in range(variable, variable + 1):
+            if _assumptions_mode == 'none' and size > lower_bound:
+                # value._solver = Glucose3(random_seed=643)
+                value._solver = Solver(_solver_name)
+                # value._solver = Glucose3(random_seed=random.randint(1, 250))
                 log_info('Solver has been restarted.')
             log_br()
             log_info('Trying to build a DFA with {0} states.'.format(size))
 
             STATISTICS.start_formula_timer()
-            if self._assumptions_mode != 'none' and size > lower_bound:
-                self._clause_generator.generate_with_new_size(self._solver, size - 1, size)
+            if _assumptions_mode != 'none' and size > lower_bound:
+                log_info('_assumptions_mode isnt none')
+                _clause_generator.generate_with_new_size(value._solver, size - 1, size)
             else:
-                self._clause_generator.generate(self._solver, size)
+                log_info('_assumptions_mode is none')
+                _clause_generator.generate(value._solver, size)
             STATISTICS.stop_formula_timer()
-            assumptions = self._clause_generator.build_assumptions(size, self._solver)
+            assumptions = _clause_generator.build_assumptions(size, value._solver)
             while True:
-                dfa = self._try_to_synthesize_dfa(size, assumptions)
+                dfa = value._try_to_synthesize_dfa(size, assumptions)
                 if dfa:
-                    counter_examples = self._examples_provider.get_counter_examples(dfa)
+                    counter_examples = value._examples_provider.get_counter_examples(dfa)
                     if counter_examples:
                         log_info('An inconsistent DFA with {0} states is found.'.format(size))
                         log_info('Added {0} counterexamples.'.format(len(counter_examples)))
 
                         STATISTICS.start_apta_building_timer()
-                        (new_nodes_from, changed_statuses) = self._apta.add_examples(counter_examples)
+                        (new_nodes_from, changed_statuses) = value._apta.add_examples(counter_examples)
                         STATISTICS.stop_apta_building_timer()
 
                         STATISTICS.start_ig_building_timer()
-                        self._ig.update(new_nodes_from)
+                        value._ig.update(new_nodes_from)
                         STATISTICS.stop_ig_building_timer()
 
                         STATISTICS.start_formula_timer()
-                        self._clause_generator.generate_with_new_counterexamples(self._solver, size,
+                        _clause_generator.generate_with_new_counterexamples(value._solver, size,
                                                                                  new_nodes_from,
                                                                                  changed_statuses)
                         STATISTICS.stop_formula_timer()
@@ -104,5 +239,56 @@ class LSUS:
                 log_info('Not found a DFA with {0} states.'.format(size))
             else:
                 log_success('The DFA with {0} states is found!'.format(size))
-                return dfa
-        return None
+            print("Done")
+            return dfa, variable
+
+helper = Helper()
+
+
+def check_sat(variable):
+    global unsat
+    print('checking unsat')
+    flag = True
+    for i in range(1, variable):
+        if i not in unsat:
+            print(str(i) + 'not in unsat')
+            flag = False
+    return flag
+
+
+def task_done(future):
+    global unsat, state_amount, dka, answer_found
+    (dfa, variable) = future.result()
+    print(str(dfa))
+    print(str(variable))
+    if dfa is not None:
+        for a in index_futures.keys():
+            if a >= variable:
+                for f in index_futures[a]:
+                    f.cancel()
+                # variable - 1
+        print(str("task_done(task, future)"))
+        if state_amount > variable:
+            dka = dfa
+            state_amount = variable
+        time.sleep(1)
+        for a in index_futures.keys():
+            for f in index_futures[a]:
+                f.cancel()
+        if check_sat(variable):
+            answer_found = True
+            q_final.put("k")
+            dka = dfa
+            for f in index_futures:
+                for ff in index_futures[f]:
+                    ff.cancel()
+        q_for_lock.put("yes")
+    else:
+        if state_amount != 1000 and check_sat(state_amount):
+            answer_found = True
+            q_final.put("k")
+            for f in index_futures:
+                for ff in index_futures[f]:
+                    ff.cancel()
+        unsat.add(variable)
+        q_for_lock.put("no")
