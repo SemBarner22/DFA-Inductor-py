@@ -39,6 +39,7 @@ from .structures import APTA, InconsistencyGraph
               default='none', show_default=True, help='assumptions mode')
 @click.option('-stat', '--statistics', 'print_statistics', is_flag=True, default=False, show_default=True,
               help='prints time statistics summary in the end')
+@click.option('-f', '--file', 'filename')
 @click.option('-ig', '--inconsistency-graph', 'use_ig', is_flag=True, default=False, show_default=True,
               help='use inconsistency graph')
 @click.version_option(__version__, '-v', '--version')
@@ -50,6 +51,7 @@ def cli(input_: str,
         solver: str,
         parallel_solver_path: str,
         cegar_mode: str,
+        filename: str,
         initial_amount: Optional[int],
         step_amount: Optional[int],
         assumptions_mode: str,
@@ -104,4 +106,4 @@ def cli(input_: str,
             log_error('DFA is not consistent with the given examples.')
     STATISTICS.stop_whole_timer()
     if print_statistics:
-        STATISTICS.print_statistics()
+        STATISTICS.print_statistics(filename)

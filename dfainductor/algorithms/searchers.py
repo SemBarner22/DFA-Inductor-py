@@ -2,7 +2,7 @@ from typing import List
 
 from pysat.solvers import Solver
 
-from ..solver_wrapper import SolverWrapper, ParallelSolverPathToFile
+from ..solver_wrapper import SolverWrapper, ParallelSolverPathToFile, ParallelSolverPortfolio
 from ..variables import VarPool
 from .reductions import ClauseGenerator
 from ..examples import BaseExamplesProvider
@@ -44,7 +44,7 @@ class LSUS:
         log_info('Clauses in CNF: {0}'.format(self._solver.nof_clauses()))
 
         STATISTICS.start_solving_timer()
-        is_sat = self._solver.solve(assumptions=assumptions)
+        is_sat = self._solver.solve(assumptions)
         STATISTICS.stop_solving_timer()
 
         if is_sat:
@@ -57,6 +57,7 @@ class LSUS:
                 )
             for i in range(size):
                 for label in range(self._apta.alphabet_size):
+                    log_info(self._apta.alphabet_size)
                     for j in range(size):
                         if assignment[self._var_pool.var('y', i, label, j) - 1] > 0:
                             dfa.add_transition(i, self._apta.alphabet[label], j)
@@ -65,13 +66,19 @@ class LSUS:
             return None
 
     def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
-        self._solver = ParallelSolverPathToFile(self._solver_name)
         log_info('Solver has been started.')
         for size in range(lower_bound, upper_bound + 1):
-            if self._assumptions_mode == 'none' and size > lower_bound:
-                self._solver = ParallelSolverPathToFile(self._solver_name)
-                log_info('Solver has been restarted.')
-            log_br()
+
+            #self._solver = ParallelSolverPathToFile(self._solver_name)
+            self._solver = ParallelSolverPortfolio(self._solver_name, ["Lingeling", "Glucose4", "Gluecard3", "Minisat22", "Minicard"])
+            # solvers = [Solver(self._solver_name), Solver("Minicard"), Solver("Glucose3")]
+
+            # if self._assumptions_mode == 'none' and size > lower_bound:
+            #     self._solver = ParallelSolverPathToFile(self._solver_name)
+            #     log_info('Solver has been restarted.')
+            # log_br()
+
+
             log_info('Trying to build a DFA with {0} states.'.format(size))
 
             STATISTICS.start_formula_timer()
