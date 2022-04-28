@@ -16,7 +16,7 @@ import random
 
 
 amount = 8
-window = 2
+window = 3
 # amount = mp.cpu_count()
 p = None
 var: int = 1
@@ -240,6 +240,9 @@ class Helper:
             else:
                 log_success('The DFA with {0} states is found!'.format(size))
             print("Done")
+            # if not check_sat(variable):
+            #     _clause_generator.add_color_used_variables(variable, value._solver, value._apta)
+            #     print(str(value._solver.solve()) + "ergfergregergergerg")
             return dfa, variable
 
 helper = Helper()

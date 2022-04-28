@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from itertools import chain
 from typing import List, Tuple, Iterator
 
+from pysat.card import CardEnc, EncType
 from pysat.solvers import Solver
 
 from ..structures import APTA, InconsistencyGraph
@@ -97,6 +98,27 @@ class BaseClausesGenerator(ABC):
                 for l_id in range(self._apta.alphabet_size):
                     assumptions.append(-self._vars.var('sw_y', cur_size, from_, l_id))
         return assumptions
+
+    def add_color_used_variables(self, variable, solver: Solver, apta: APTA):
+        for i in range(variable):
+            solver.append_formula(
+                _iff_disjunction_to_clauses(
+                    self._vars.var('uc', variable),
+                    tuple(self._vars.var('x', j, i) for j in range(apta.size))
+                )
+            )
+        for i in range(variable - 1):
+            solver.append_formula(
+                _implication_to_clauses(
+                    -self._vars.var('uc', i),
+                    -self._vars.var('uc', i + 1),
+                )
+            )
+        solver.append_formula(
+            CardEnc.atmost(
+                lits=[self._vars.var('uc', i) for i in range(variable)], bound=variable - 1, encoding=EncType.seqcounter
+            )
+        )
 
 
 class ClauseGenerator(BaseClausesGenerator):
