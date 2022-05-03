@@ -1,6 +1,8 @@
 import queue
 from typing import List
 
+from pysat.additional_solvers import ParallelSolverPathToFile, ParallelSolverPortfolio
+from pysat.card import CardEnc, EncType
 from pysat.solvers import Solver
 
 from ..variables import VarPool
@@ -19,37 +21,18 @@ q_for_lock = queue.Queue()
 futures = set()
 dka = None
 
-
-def task_done(future):
-    dfa = future.result()
-    print(str(dfa))
-    futures.remove(future)
-    if dfa is not None:
-        for a in futures:
-            a.cancel()
-        print(str("task_done(task, future)"))
-        global dka
-        dka = dfa
-        for a in futures:
-            a.cancel()
-        q_for_lock.put("d")
-    elif len(futures) == 0:
-        dka = None
-        q_for_lock.put("empty")
-
-
-
 class LSUS:
     _solver: Solver
 
     def __init__(self,
                  apta: APTA,
                  ig: InconsistencyGraph,
-                 solver_name: str,
+                 solver_name: Optional[str],
                  sb_strategy: str,
                  cegar_mode: str,
                  examples_provider: BaseExamplesProvider,
-                 assumptions_mode: str) -> None:
+                 assumptions_mode: str,
+                 parallel_solver_path) -> None:
         self._apta = apta
         self._ig = ig
         self._solver_name = solver_name
@@ -57,6 +40,7 @@ class LSUS:
         self._cegar_mode = cegar_mode
         self._examples_provider = examples_provider
         self._assumptions_mode = assumptions_mode
+        self._parallel_solver_path = parallel_solver_path
 
         self._var_pool: VarPool = VarPool()
         self._clause_generator = ClauseGenerator(self._apta,
@@ -90,7 +74,7 @@ class LSUS:
         else:
             return None
 
-    def search(self, lower_bound: int, upper_bound: int, use_parallel_cegar: bool) -> Optional[DFA]:
+    def search(self, lower_bound: int, upper_bound: int) -> Optional[DFA]:
         # self._solver = Solver(self._solver_name)
         log_info('Solver has been started.')
         for size in range(lower_bound, upper_bound + 1):
@@ -103,51 +87,32 @@ class LSUS:
             # STATISTICS.start_formula_timer()
             # STATISTICS.stop_formula_timer()
             assumptions = self._clause_generator.build_assumptions(size)
-
-            if use_parallel_cegar:
-                global p
-                p = pb.ProcessPool(amount)
-                global futures
-                for i in range(amount):
-                    future = p.schedule(
-                        cegar,
-                        args=(
-                            self,
-                            self._apta,
-                            self._ig,
-                            self._cegar_mode,
-                            self._solver_name,
-                            self._examples_provider,
-                            self._var_pool,
-                            self._clause_generator,
-                            lower_bound,
-                            size,
-                            assumptions,
-                            True
-                        )
-                    )
-                    future.add_done_callback(task_done)
-                    futures.add(future)
-                print("waiting")
-                q_for_lock.get(block=True)
-                p.close()
-                p.stop()
-                p.join()
-                global dka
-                if dka is not None:
-                    return dka
-            else:
-                dfa = cegar(self, self._apta,
-                            self._ig,
-                            self._cegar_mode,
-                            self._solver_name,
-                            self._examples_provider,
-                            self._var_pool,
-                            self._clause_generator, lower_bound,
-                size, assumptions)
-                if dfa is not None:
-                    return dfa
+            dfa = cegar(self, self._apta,
+                        self._ig,
+                        self._cegar_mode,
+                        self._solver_name,
+                        self._examples_provider,
+                        self._var_pool,
+                        self._clause_generator, lower_bound,
+            size, assumptions)
+            if dfa is not None:
+                return dfa
         return None
+
+
+def correct_solver(solver_name, _parallel_solver_path):
+    if len(solver_name) > 0:
+        if len(solver_name) == 1:
+            print("solver")
+            _solver = Solver(solver_name[0])
+        else:
+            print("portfolio")
+            _solver = ParallelSolverPortfolio(solver_name)
+    else:
+        print("path")
+        _solver = ParallelSolverPathToFile(_parallel_solver_path[0], _parallel_solver_path[1], _parallel_solver_path[2])
+    return _solver
+
 
 def cegar(
         self,
@@ -161,7 +126,10 @@ def cegar(
         lower_bound,
         size, assumptions, shuffle=False) -> Optional[DFA]:
 
-    self._solver = Solver(solver_name)
+    # print(str(solver_name))
+    self._solver = correct_solver(solver_name, self._parallel_solver_path)
+
+    # clauses = CardEnc.atmost(lits=[1, 2], encoding=EncType.seqcounter)
     if self._assumptions_mode != 'none' and size > lower_bound:
         log_info('_assumptions_mode isnt none')
         self._clause_generator.generate_with_new_size(self._solver, size - 1, size)
@@ -174,7 +142,11 @@ def cegar(
             random.shuffle(provider.examples)
         dfa = self._try_to_synthesize_dfa(size, assumptions)
         if dfa:
-            counter_examples = provider.get_counter_examples(dfa)
+
+            dfa._perform_cover_calculating(provider.examples)
+            all_counter_examples = provider.get_all_counter_examples(dfa)
+            counter_amount = len(provider.get_counter_examples(dfa))
+            counter_examples = sorted(all_counter_examples, key=lambda x: dfa.cover_for_word_count(x))[:counter_amount]
             if counter_examples:
                 log_info('An inconsistent DFA with {0} states is found.'.format(size))
                 log_info('Added {0} counterexamples.'.format(len(counter_examples)))
