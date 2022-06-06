@@ -1,3 +1,4 @@
+import sys
 from timeit import default_timer as timer
 from typing import Dict
 
@@ -50,8 +51,12 @@ class STATISTICS:
         return total_time
 
     @classmethod
-    def print_statistics(cls):
-        log_br()
+    def print_statistics(cls, filename):
+        original_stdout = sys.stdout
+        with open("answers/" + filename + ".txt", "w+", encoding='utf-8') as f:
+            sys.stdout = f
+            print(cls.WHOLE_SUM)
+            sys.stdout = original_stdout
         log_statistics(cls.APTA_NAME, cls.APTA_SUM)
         log_statistics(cls.IG_NAME, cls.IG_SUM)
         log_statistics(cls.FORMULA_NAME, cls.FORMULA_SUM)

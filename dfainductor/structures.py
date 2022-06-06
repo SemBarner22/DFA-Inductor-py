@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from enum import IntEnum
 from typing import Dict, List, Union, Optional, Tuple, Set
 
@@ -183,6 +184,7 @@ class DFA:
             self._id = id_
             self.status = status
             self._children = {}
+            self._weights = defaultdict(lambda: 0)
 
         @property
         def id_(self) -> int:
@@ -194,6 +196,12 @@ class DFA:
 
         def has_child(self, label: str) -> bool:
             return label in self._children.keys()
+
+        def add_weight(self, label: str):
+            self._weights[label] += 1
+
+        def get_weight(self, label: str):
+            return self._weights[label]
 
         def get_child(self, label: str) -> DFA.State:
             return self._children[label]
@@ -228,12 +236,36 @@ class DFA:
             cur_state = cur_state.get_child(label)
         return cur_state.is_accepting()
 
+    def run_for_cover(self, word: List[str], start: DFA.State = None):
+        cur_state = start if start else self.get_start()
+        for label in word:
+            cur_state.add_weight(label)
+            cur_state = cur_state.get_child(label)
+
     def check_consistency(self, examples: List[str]) -> bool:
         for example in examples:
             example_split = example.split()
             if (example_split[0] == '1') != self.run(example_split[2:]):
                 return False
         return True
+
+    def _perform_cover_calculating(self, examples: List[str]) -> None:
+        for example in examples:
+            example_split = example.split()
+            if (example_split[0] == '1') != self.run(example_split[2:]):
+                self.run_for_cover(example_split[2:])
+
+    def cover_for_word_count(self, word) -> float:
+        cur_state = self.get_start()
+        cover = 0
+        word_split = word.split()
+        for label in word_split[2:]:
+            cover += cur_state.get_weight(label)
+            cur_state = cur_state.get_child(label)
+        if len(word_split[2:]) > 0:
+            return cover / len(word_split[2:])
+        else:
+            return 0
 
     def to_dot(self) -> str:
         s = (
