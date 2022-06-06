@@ -1,4 +1,4 @@
-Ветка prefinal содержит комбинации эвристик, чистка кода еще в процессе 
+Ветка master содержит комбинации эвристик, чистка кода еще в процессе 
 
 # DFA-Inductor-py
 A python tool for solving minDFA problem.
